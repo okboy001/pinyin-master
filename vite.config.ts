@@ -15,10 +15,15 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        manualChunks: {
-          react: ['react', 'react-dom'],
-          pinyin: ['pinyin-pro'],
-          icons: ['lucide-react'],
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('react-dom') || id.includes('/react/')) return 'react';
+            if (id.includes('pinyin-pro')) return 'pinyin';
+            if (id.includes('lucide-react')) return 'icons';
+            return;
+          }
+          // Large lesson corpus — own chunk so main app JS stays leaner / cacheable
+          if (id.includes('/src/data/curriculum')) return 'curriculum';
         },
       },
     },

@@ -1,4 +1,4 @@
-export type Phase = 'idle' | 'system_speaking' | 'user_speaking' | 'evaluating';
+export type Phase = 'idle' | 'system_speaking' | 'preparing' | 'user_speaking' | 'evaluating';
 
 export type WordEntry = {
   hanzi: string;
@@ -20,6 +20,12 @@ export type ErrorData = {
   userPinyin: string;
   correctText: string;
   correctPinyin: string;
+  issues?: {
+    tone: boolean;
+    initial: boolean;
+    final: boolean;
+    tips: string[];
+  };
 };
 
 export type AppSettings = {
@@ -37,3 +43,28 @@ export type CustomSession = {
   words: string[];
   index: number;
 } | null;
+
+export type PathProgress = {
+  completedLessons: string[];
+  /** YYYY-MM-DD */
+  lastPracticeDate: string | null;
+  streak: number;
+  /** cumulative correct answers */
+  lifetimeCorrect: number;
+  dailyGoal: number;
+  /** correct count for lastPracticeDate */
+  dailyCorrect: number;
+  /** best accuracy % per lesson id */
+  lessonBest: Record<string, number>;
+};
+
+export type PracticeMode = 'path' | 'lesson' | 'srs' | 'free' | 'custom';
+
+export type ActivePractice = {
+  mode: PracticeMode;
+  lessonId?: string;
+  title: string;
+  subtitle?: string;
+  /** Scene packs / warmup: double demo + blind follow */
+  earFirst?: boolean;
+};

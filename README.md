@@ -1,30 +1,33 @@
 # Pinyin Master
 
-普通話拼音朗讀練習：系統示範、跟讀、即時評分，以及聲母／韻母／聲調錯誤統計。全程喺瀏覽器運行（Web Speech API），唔需要 API key。
+由完全唔識國語，練到講得出口。瀏覽器內聽示範、跟讀、評分；有六關學習路徑、間隔複習（SRS）、弱項特訓同進度備份。唔需要 API key。
 
-語音辨識需要 **HTTPS** 同麥克風權限，建議用 Chrome、Edge 或 Safari。
+語音辨識需要 **HTTPS** 同麥克風，建議 Chrome / Edge / Safari。手機可「加到主畫面」離線打開殼層。
 
-## 功能
+## 學習路徑
 
-- 預設高頻詞庫（去重真實詞條，唔再假扮萬字）
-- 先聽／先讀、盲讀、TTS 語速滑桿
-- 自訂句子練習（獨立存檔，唔覆蓋預設進度）
-- 診斷中心：正確率、錯題重練、重置進度
-- 詞庫可點擊跳到指定詞
+1. 四聲（含輕聲、儿化、變調）
+2. 聲母韻母（最小對立：zh/z、n/l、ü…）
+3. 音節與數字價錢
+4. 高頻詞（飲食、時間、場所…）
+5. 短句（點餐、問路、寒暄、邀約…）
+6. 對話流利（餐廳、機場、辦公室…）
+
+另有混合複習、衝星重練、自由詞庫、自訂句子、匯出／匯入備份。
 
 ## 本機開發
-
-需要 Node.js 18+。
 
 ```bash
 npm install
 npm run dev
 ```
 
-瀏覽器打開 http://localhost:3000 。
+打開 http://localhost:3000 。
 
-## GitHub Pages
+```bash
+npm run build   # 產出 dist/
+npm run lint
+npm run test:scoring
+```
 
-每次 push 去 `main`，GitHub Actions 會 `npm run build` 然後部署 `dist/`。
-
-線上：https://okboy001.github.io/pinyin-master/
+暫時以本機迭代為主；需要時再手動部署 GitHub Pages。

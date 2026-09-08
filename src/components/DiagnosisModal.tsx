@@ -10,6 +10,8 @@ type Props = {
   onReset: () => void;
   onRetryMistakes: () => void;
   onPracticeWord: (word: string) => void;
+  onStartWeakDrill?: () => void;
+  canStartWeakDrill?: boolean;
 };
 
 function ToneBars({ toneStats }: { toneStats: Record<string, number> }) {
@@ -78,6 +80,8 @@ export function DiagnosisModal({
   onReset,
   onRetryMistakes,
   onPracticeWord,
+  onStartWeakDrill,
+  canStartWeakDrill = false,
 }: Props) {
   const answered = history.length;
   const correct = history.filter((h) => h.isCorrect).length;
@@ -150,6 +154,16 @@ export function DiagnosisModal({
             >
               重練錯題（{mistakeCount}）
             </button>
+            {onStartWeakDrill && (
+              <button
+                type="button"
+                disabled={!canStartWeakDrill}
+                onClick={onStartWeakDrill}
+                className="flex-1 py-3 rounded-xl font-bold text-sm bg-violet-500 text-white disabled:opacity-40 hover:bg-violet-600 transition"
+              >
+                針對弱項開課
+              </button>
+            )}
             <button
               type="button"
               onClick={onReset}

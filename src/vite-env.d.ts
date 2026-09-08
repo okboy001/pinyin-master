@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 interface SpeechRecognition extends EventTarget {
   lang: string;
   continuous: boolean;
