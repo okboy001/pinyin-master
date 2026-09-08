@@ -537,6 +537,22 @@ export default function App() {
     pulseSaved();
   };
 
+  const handlePracticeWord = (word: string) => {
+    if (!word.trim()) return;
+    const newWords = [textToDictEntry(word.trim())];
+    setDictionary(newWords);
+    setIsCustomMode(true);
+    setGlobalIndex(0);
+    saveCustomSession({ words: newWords, index: 0 });
+    setShowHistory(false);
+    setPhase('idle');
+    setIsPlaying(false);
+    window.speechSynthesis.cancel();
+    stopRecognition();
+    clearEvalTimeouts();
+    pulseSaved();
+  };
+
   const handleReset = () => {
     if (!window.confirm('確定重置進度、歷史同診斷統計？自訂詞庫亦會清除。')) return;
     resetLearningData();
@@ -910,6 +926,7 @@ export default function App() {
           onClose={() => setShowHistory(false)}
           onReset={handleReset}
           onRetryMistakes={handleRetryMistakes}
+          onPracticeWord={handlePracticeWord}
         />
       )}
     </div>

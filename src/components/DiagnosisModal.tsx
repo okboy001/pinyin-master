@@ -1,4 +1,4 @@
-import { Activity, RotateCcw, X } from 'lucide-react';
+import { Activity, CheckCircle2, RotateCcw, X } from 'lucide-react';
 import type { HistoryEntry } from '../types';
 
 type Props = {
@@ -9,6 +9,7 @@ type Props = {
   onClose: () => void;
   onReset: () => void;
   onRetryMistakes: () => void;
+  onPracticeWord: (word: string) => void;
 };
 
 function ToneBars({ toneStats }: { toneStats: Record<string, number> }) {
@@ -76,11 +77,13 @@ export function DiagnosisModal({
   onClose,
   onReset,
   onRetryMistakes,
+  onPracticeWord,
 }: Props) {
   const answered = history.length;
   const correct = history.filter((h) => h.isCorrect).length;
   const accuracy = answered > 0 ? Math.round((correct / answered) * 100) : null;
   const mistakeCount = history.filter((h) => !h.isCorrect && h.wrongText !== '手動跳過').length;
+  const recent = history.slice(0, 30);
 
   const toneLabels: Record<string, string> = {
     1: '第 1 聲 (陰平)',
@@ -131,7 +134,7 @@ export function DiagnosisModal({
               <span className="text-xl md:text-2xl font-black text-rose-600">{topInitial || '無'}</span>
               <span className="text-[10px] text-rose-500/70 mt-1 block">{maxInitialCount > 0 ? `累積錯 ${maxInitialCount} 次` : '表現完美'}</span>
             </div>
-            <div className="bg-blue-50 border border-blue-100 p-3 md:p-4 rounded-2xl text-center shadow-sm col-span-2 sm:col-span-1">
+            <div className="bg-blue-50 border border-blue-100 p-3 md:p-4 rounded-2xl text-center shadow-sm col-span-2">
               <span className="text-[10px] md:text-xs font-bold text-blue-400 mb-1 block">最易錯聲調</span>
               <span className="text-base md:text-xl font-black text-blue-600">{topTone ? toneLabels[topTone] : '無'}</span>
               <span className="text-[10px] text-blue-500/70 mt-1 block">{maxToneCount > 0 ? `累積錯 ${maxToneCount} 次` : '表現完美'}</span>
@@ -154,6 +157,46 @@ export function DiagnosisModal({
             >
               <RotateCcw className="w-4 h-4" /> 重置進度
             </button>
+          </div>
+
+          <div className="bg-white border border-slate-200 p-4 md:p-5 rounded-2xl shadow-sm">
+            <h4 className="text-sm font-bold text-slate-500 mb-3 border-b border-slate-100 pb-2">最近練習紀錄</h4>
+            {recent.length === 0 ? (
+              <div className="text-sm text-slate-400 py-2">尚未有練習紀錄</div>
+            ) : (
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {recent.map((entry, idx) => (
+                  <button
+                    type="button"
+                    key={`${entry.word}-${entry.time}-${idx}`}
+                    onClick={() => onPracticeWord(entry.word)}
+                    className={`w-full flex items-center justify-between gap-3 border p-3 rounded-xl text-left transition hover:border-slate-300 ${
+                      entry.isCorrect ? 'bg-emerald-50/60 border-emerald-100' : 'bg-rose-50/50 border-rose-100'
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        {entry.isCorrect ? (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                        ) : (
+                          <span className="w-4 h-4 rounded-full bg-rose-400 text-white text-[10px] font-black flex items-center justify-center shrink-0">!</span>
+                        )}
+                        <span className="font-black text-slate-800 truncate">{entry.word}</span>
+                        <span className="text-[10px] text-slate-400 font-bold shrink-0">{entry.time}</span>
+                      </div>
+                      {!entry.isCorrect && (
+                        <div className="text-[11px] text-rose-500 mt-1 truncate">
+                          讀成 {entry.wrongText}
+                          {entry.wrongPinyin && entry.wrongPinyin !== '---' ? `（${entry.wrongPinyin}）` : ''}
+                        </div>
+                      )}
+                    </div>
+                    <span className="text-[10px] font-bold text-slate-400 shrink-0">重練</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <p className="text-[10px] text-slate-400 mt-2 font-bold">點擊任一紀錄可即時重練該詞</p>
           </div>
 
           <div className="bg-white border border-slate-200 p-4 md:p-5 rounded-2xl shadow-sm">
