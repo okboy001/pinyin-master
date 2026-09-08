@@ -4,6 +4,14 @@
 
 語音辨識需要 **HTTPS** 同麥克風權限，建議用 Chrome、Edge 或 Safari。
 
+## 功能
+
+- 預設高頻詞庫（去重真實詞條，唔再假扮萬字）
+- 先聽／先讀、盲讀、TTS 語速滑桿
+- 自訂句子練習（獨立存檔，唔覆蓋預設進度）
+- 診斷中心：正確率、錯題重練、重置進度
+- 詞庫可點擊跳到指定詞
+
 ## 本機開發
 
 需要 Node.js 18+。
@@ -19,10 +27,4 @@ npm run dev
 
 每次 push 去 `main`，GitHub Actions 會 `npm run build` 然後部署 `dist/`。
 
-1. Repo → **Settings → Pages**
-2. **Source** 選 **GitHub Actions**
-3. 等 workflow 跑完之後，網站會喺：
-
-`https://<你的帳號>.github.io/pinyin-master/`
-
-首次啟用 Pages 之後，之後每次更新 `main` 都會自動上線。
+線上：https://okboy001.github.io/pinyin-master/
