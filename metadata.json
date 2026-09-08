@@ -1,0 +1,6 @@
+{
+  "name": "Pinyin Master",
+  "description": "An interactive Chinese Pinyin learning application designed for responsive desktop and mobile (iPhone 17) viewing, featuring speech recognition, pronunciation diagnosis, and interactive tests.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": []
+}
