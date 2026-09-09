@@ -1,6 +1,6 @@
 {
   "name": "Pinyin Master",
-  "short_name": "拼音練習",
+  "short_name": "Pinyin Master",
   "description": "由零基礎練到普通話流利：四聲、易混淆音、詞句對話。",
   "start_url": "./",
   "display": "standalone",
