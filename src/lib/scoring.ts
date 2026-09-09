@@ -438,7 +438,7 @@ export function diagnoseAttempt(correctHanzi: string, wrongText: string): {
     }
     tips.push('未聽到清晰發音，對住聲調曲線再試一次');
     if (correctHanzi.length <= 2) {
-      tips.push('單字請稍為拉長、對住咪講；嘈雜環境辨識會唔穩');
+      tips.push('短詞請講清楚、對住咪；嘈雜環境辨識會唔穩');
     }
     return { tone: false, initial: false, final: false, tips };
   }

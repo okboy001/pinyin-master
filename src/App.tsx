@@ -543,7 +543,7 @@ export default function App() {
             if (!sessionStorage.getItem('pm_tone_single_tip_v1')) {
               sessionStorage.setItem('pm_tone_single_tip_v1', '1');
               window.setTimeout(() => {
-                setStageTipToast('單字提示：稍拉長、對住咪 · 辨識錯唔一定係你讀錯');
+                setStageTipToast('短詞提示：講清楚、對住咪 · 辨識錯唔一定係你讀錯');
                 window.setTimeout(() => setStageTipToast(null), 3600);
               }, 4500);
             }
@@ -559,7 +559,7 @@ export default function App() {
           if (!sessionStorage.getItem('pm_tone_single_tip_v1')) {
             sessionStorage.setItem('pm_tone_single_tip_v1', '1');
             window.setTimeout(() => {
-              setStageTipToast('單字提示：稍拉長、對住咪 · 辨識錯唔一定係你讀錯');
+              setStageTipToast('短詞提示：講清楚、對住咪 · 辨識錯唔一定係你讀錯');
               window.setTimeout(() => setStageTipToast(null), 3600);
             }, 4500);
           }
@@ -2231,7 +2231,7 @@ export default function App() {
     if (!word.trim()) return;
     beginPractice([textToDictEntry(word.trim())], {
       mode: 'custom',
-      title: '單詞重練',
+      title: '詞語重練',
       subtitle: word.trim(),
     });
     setShowHistory(false);
@@ -4516,13 +4516,13 @@ export default function App() {
 
       <main className="flex-1 w-full max-w-5xl mx-auto flex flex-col px-4 md:px-6 pb-2 gap-3 md:gap-6 min-h-0 overflow-hidden">
         <div
-          className="flex-1 w-full bg-white rounded-[2rem] md:rounded-[2.5rem] shadow-sm border border-slate-200 flex flex-col md:flex-row overflow-hidden min-h-0"
+          className="flex-1 w-full bg-white rounded-[2rem] md:rounded-[2.5rem] shadow-sm border border-slate-200 flex flex-col md:flex-row overflow-hidden min-h-0 min-w-0"
           onTouchStart={onPracticeSwipeStart}
           onTouchEnd={onPracticeSwipeEnd}
         >
-          <div className="flex-[3] flex flex-col items-center justify-center p-4 sm:p-8 relative min-h-0 overflow-y-auto w-full select-none">
+          <div className="flex-[3] flex flex-col items-center justify-center p-4 sm:p-8 relative min-h-0 overflow-y-auto overflow-x-hidden w-full max-w-full select-none">
             <span
-              className={`font-mono font-bold text-slate-300 mb-2 md:mb-4 text-center transition-opacity duration-500 break-words w-full whitespace-normal leading-relaxed px-2 ${
+              className={`font-mono font-bold text-slate-300 mb-2 md:mb-4 text-center transition-opacity duration-500 break-words w-full max-w-full whitespace-normal leading-relaxed px-2 ${
                 shouldHidePinyin ? 'opacity-0' : 'opacity-100'
               } ${
                 currentWord.pinyin.length > 40
@@ -4530,8 +4530,8 @@ export default function App() {
                   : currentWord.pinyin.length > 20
                     ? 'text-lg md:text-2xl'
                     : currentWord.pinyin.length > 10
-                      ? 'text-xl md:text-3xl tracking-wider'
-                      : 'text-2xl md:text-5xl tracking-[0.2em]'
+                      ? 'text-xl md:text-3xl tracking-wide'
+                      : 'text-2xl md:text-5xl tracking-wide md:tracking-[0.15em]'
               }`}
             >
               {currentWord.pinyin}
@@ -4600,18 +4600,18 @@ export default function App() {
                 }
               }}
               aria-label={shouldHideHanzi ? '雙擊偷看漢字' : '撳一下再聽'}
-              className={`font-black text-center break-words w-full whitespace-normal px-2 transition-opacity duration-500 ${
+              className={`font-black text-center break-words w-full max-w-full whitespace-normal px-2 transition-opacity duration-500 [overflow-wrap:anywhere] ${
                 shouldHideHanzi ? 'opacity-0 cursor-pointer text-slate-800' : 'opacity-100 cursor-pointer'
               } ${
                 currentWord.hanzi.length > 25
-                  ? 'text-xl sm:text-2xl md:text-3xl leading-snug'
+                  ? 'text-lg sm:text-xl md:text-3xl leading-snug tracking-normal'
                   : currentWord.hanzi.length > 15
-                    ? 'text-[1.5rem] sm:text-[2rem] md:text-[3rem] leading-snug'
+                    ? 'text-xl sm:text-2xl md:text-[2.75rem] leading-snug tracking-normal'
                     : currentWord.hanzi.length > 8
-                      ? 'text-[2.5rem] sm:text-[3rem] md:text-[4rem] leading-tight tracking-wide'
+                      ? 'text-2xl sm:text-[2.75rem] md:text-[3.5rem] leading-tight tracking-wide'
                       : currentWord.hanzi.length > 4
-                        ? 'text-[3rem] sm:text-[4rem] md:text-[5rem] lg:text-[6rem] leading-tight tracking-widest'
-                        : 'text-[4rem] sm:text-[6rem] md:text-[8rem] lg:text-[9rem] leading-none tracking-widest'
+                        ? 'text-[2.5rem] sm:text-[3.5rem] md:text-[5rem] lg:text-[5.5rem] leading-tight tracking-wide'
+                        : 'text-[3.25rem] sm:text-[5rem] md:text-[7rem] lg:text-[8rem] leading-none tracking-wide sm:tracking-wider'
               }`}
             >
               {shouldHideHanzi || phase !== 'user_speaking' || !liveTranscript ? (
@@ -4956,11 +4956,11 @@ export default function App() {
                       <Mic className="w-5 h-5 md:w-6 md:h-6" />
                     </div>
                   </div>
-                  <div className={`text-base md:text-2xl font-bold tracking-widest text-center min-h-[2.5rem] md:min-h-[3rem] flex flex-col items-center justify-center max-w-[90%] overflow-hidden gap-1 ${onTrack ? 'text-emerald-700' : 'text-slate-600'}`}>
-                    <span className="truncate">{liveTranscript ? `「${heard || liveTranscript}」` : '請朗讀...'}</span>
+                  <div className={`text-base md:text-2xl font-bold tracking-wide text-center min-h-[2.5rem] md:min-h-[3rem] flex flex-col items-center justify-center max-w-[min(100%,22rem)] w-full gap-1 px-1 ${onTrack ? 'text-emerald-700' : 'text-slate-600'}`}>
+                    <span className="break-words whitespace-normal leading-snug max-w-full">{liveTranscript ? `「${heard || liveTranscript}」` : '請朗讀...'}</span>
                     {!heard && targetLen <= 2 && (
                       <span className="text-[10px] font-black text-slate-400 px-2">
-                        單字請稍拉長、對住咪 · 辨識較易飄
+                        短詞請講清楚、對住咪 · 辨識較易飄
                       </span>
                     )}
                     {heard &&
@@ -4971,7 +4971,7 @@ export default function App() {
                       </span>
                     )}
                     {heard && (
-                      <span className={`text-xs md:text-sm font-mono font-bold tracking-wide truncate max-w-full ${onTrack ? 'text-emerald-500' : 'text-slate-400'}`}>
+                      <span className={`text-xs md:text-sm font-mono font-bold tracking-wide break-words whitespace-normal max-w-full leading-snug ${onTrack ? 'text-emerald-500' : 'text-slate-400'}`}>
                         {toPinyinString(heard, 'symbol')}
                       </span>
                     )}
@@ -5547,7 +5547,7 @@ export default function App() {
                 {errorData.userText === '(未偵測到發音)' && (
                   <div className="w-full flex flex-col items-center gap-2 max-w-md">
                     <p className="text-[11px] md:text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 leading-relaxed">
-                      未聽清有效發音（單字有時會認成雜訊，或者咪太遠）· 睇麥克風條有冇跳動，靠近咪、稍拉長再跟。呢次唔計入發音錯分析。
+                      未聽清有效發音（短詞有時會認成雜訊，或者咪太遠）· 睇麥克風條有冇跳動，靠近咪、講清楚再跟。呢次唔計入發音錯分析。
                     </p>
                     <button
                       type="button"
@@ -5620,7 +5620,7 @@ export default function App() {
                           {onlyHanzi(errorData.userText) &&
                           isSameSyllableWrongTone(errorData.userText, errorData.correctText)
                             ? `對比 ${onlyHanzi(errorData.userText)} → ${errorData.correctText} · 撳曲線慢聽`
-                            : '聲調唔啱 · 撳曲線聽單字再跟'}
+                            : '聲調唔啱 · 撳曲線聽聲調再跟'}
                         </span>
                       </div>
                     )}

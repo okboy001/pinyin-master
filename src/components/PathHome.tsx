@@ -1141,7 +1141,7 @@ export function PathHome({
         </section>
 
         <p className="text-center text-[10px] text-slate-500 font-bold tracking-wider pb-24 md:pb-2">
-          Pinyin Master v1.9.9 · {curriculum.lessons} 課 · 約 {curriculum.minutes} 分 · 本地練習 · 唔會自動上傳
+          Pinyin Master v1.10.0 · {curriculum.lessons} 課 · 約 {curriculum.minutes} 分 · 本地練習 · 唔會自動上傳
         </p>
       </div>
 

@@ -196,7 +196,7 @@ export function ToneContour({ hanzi, compact = false, compareHanzi }: Props) {
       </div>
       {!compact && (
         <span className="mt-1 text-[10px] font-bold text-slate-400 tracking-wide">
-          {showCompare ? '點左／右曲線對比聽 · 長按慢聽正確' : '點曲線聽單字 · 長按慢聽整句'}
+          {showCompare ? '點左／右曲線對比聽 · 長按慢聽正確' : '點曲線聽音節 · 長按慢聽整詞'}
         </span>
       )}
     </div>
