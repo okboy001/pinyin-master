@@ -4,16 +4,20 @@ type Props = {
   stream: MediaStream | null;
   active: boolean;
   onQuietTap?: () => void;
+  /** Peak level 0–1 while active (for ASR silence gating) */
+  onLevel?: (level: number) => void;
 };
 
 /** Simple mic level meter so beginners know the mic is picking them up */
-export function MicLevelMeter({ stream, active, onQuietTap }: Props) {
+export function MicLevelMeter({ stream, active, onQuietTap, onLevel }: Props) {
   const [level, setLevel] = useState(0);
   const [quietTooLong, setQuietTooLong] = useState(false);
   const rafRef = useRef(0);
   const ctxRef = useRef<AudioContext | null>(null);
   const quietSinceRef = useRef<number | null>(null);
   const quietBuzzedRef = useRef(false);
+  const onLevelRef = useRef(onLevel);
+  onLevelRef.current = onLevel;
 
   useEffect(() => {
     if (!active || !stream) {
@@ -42,6 +46,7 @@ export function MicLevelMeter({ stream, active, onQuietTap }: Props) {
       const avg = sum / data.length / 255;
       const next = Math.min(1, avg * 2.2);
       setLevel(next);
+      onLevelRef.current?.(next);
 
       const now = performance.now();
       if (next < 0.06) {

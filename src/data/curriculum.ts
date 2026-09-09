@@ -56,6 +56,11 @@ export function listenSecondsForItem(
   earFirst = false,
 ): number {
   const base = listenSecondsForLesson(lesson, earFirst);
+  if (hanziLen <= 1) {
+    // Tones need more time: wait out noisy interim + soft retry
+    const toneish = lesson?.stageId === 'tones' || lesson?.kind === 'tone_drill';
+    return base + (toneish ? 4 : 2);
+  }
   if (hanziLen <= 2) return base;
   if (hanziLen <= 6) return base + 2;
   if (hanziLen <= 12) return base + 4;

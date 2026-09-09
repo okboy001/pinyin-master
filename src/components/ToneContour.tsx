@@ -38,15 +38,23 @@ export function extractTones(hanzi: string): number[] {
 type Props = {
   hanzi: string;
   compact?: boolean;
+  /** Optional wrong reading to show tone contrast (e.g. 意 vs 椅) */
+  compareHanzi?: string;
 };
 
-export function ToneContour({ hanzi, compact = false }: Props) {
+export function ToneContour({ hanzi, compact = false, compareHanzi }: Props) {
   const tones = extractTones(hanzi).slice(0, 6);
+  const compareTones = compareHanzi ? extractTones(compareHanzi).slice(0, 6) : [];
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const holdTriggeredRef = useRef(false);
   if (!tones.length) return null;
-  const hero = !compact && tones.length <= 2;
+  const hero = !compact && tones.length <= 2 && !compareHanzi;
   const chars = [...hanzi];
+  const showCompare =
+    Boolean(compareHanzi) &&
+    compareTones.length > 0 &&
+    hanzi.length <= 2 &&
+    (compareHanzi?.length ?? 0) <= 2;
 
   const playChar = (index: number) => {
     const ch = chars[index];
@@ -99,6 +107,39 @@ export function ToneContour({ hanzi, compact = false }: Props) {
       }}
     >
       <div className="flex flex-wrap items-end justify-center gap-3">
+        {showCompare && compareHanzi && (
+          <button
+            type="button"
+            onClick={() => {
+              speakHanzi(compareHanzi, { rate: 0.65 });
+              try {
+                if (navigator.vibrate) navigator.vibrate(6);
+              } catch {
+                /* ignore */
+              }
+            }}
+            className="flex flex-col items-center gap-1 rounded-xl px-1.5 py-1.5 hover:bg-rose-50 active:scale-95 transition min-w-[3rem] border border-rose-100 bg-rose-50/50"
+            title={`你讀成「${compareHanzi}」`}
+          >
+            <span className="text-[9px] font-black text-rose-400 tracking-wider">你讀成</span>
+            <svg viewBox="0 0 80 64" className="w-16 h-11 text-rose-500 stroke-rose-500" aria-hidden>
+              <line x1="4" y1="8" x2="76" y2="8" className="stroke-slate-200" strokeWidth="1" />
+              <line x1="4" y1="56" x2="76" y2="56" className="stroke-slate-200" strokeWidth="1" />
+              <path
+                d={TONE_PATHS[compareTones[0] ?? 0] || TONE_PATHS[0]}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={5}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            <span className="font-black text-xs text-rose-600">{compareHanzi}</span>
+            <span className="text-[10px] font-bold text-rose-400">
+              {TONE_LABELS[compareTones[0] ?? 0] || TONE_LABELS[0]}
+            </span>
+          </button>
+        )}
         {tones.map((tone, i) => {
           const color = TONE_COLORS[tone] || TONE_COLORS[0];
           return (
@@ -112,10 +153,15 @@ export function ToneContour({ hanzi, compact = false }: Props) {
                 }
                 playChar(i);
               }}
-              className="flex flex-col items-center gap-1 rounded-xl px-1.5 py-1.5 md:px-1 md:py-0.5 hover:bg-slate-50 active:scale-95 transition min-w-[3rem] md:min-w-0"
+              className={`flex flex-col items-center gap-1 rounded-xl px-1.5 py-1.5 md:px-1 md:py-0.5 hover:bg-slate-50 active:scale-95 transition min-w-[3rem] md:min-w-0 ${
+                showCompare ? 'border border-emerald-100 bg-emerald-50/50' : ''
+              }`}
               title={`聽「${chars[i] ?? ''}」· ${TONE_LABELS[tone] || TONE_LABELS[0]}`}
               aria-label={`聽第 ${i + 1} 字聲調`}
             >
+              {showCompare && i === 0 && (
+                <span className="text-[9px] font-black text-emerald-500 tracking-wider">正確</span>
+              )}
               <svg
                 viewBox="0 0 80 64"
                 className={`${
@@ -134,6 +180,9 @@ export function ToneContour({ hanzi, compact = false }: Props) {
                   strokeLinejoin="round"
                 />
               </svg>
+              {showCompare && (
+                <span className="font-black text-xs text-emerald-700">{chars[i]}</span>
+              )}
               <span className={`font-black tracking-wide ${hero ? 'text-xs md:text-[10px]' : 'text-[10px]'} ${color.split(' ')[0]}`}>
                 {compact
                   ? tone === 0
@@ -147,7 +196,7 @@ export function ToneContour({ hanzi, compact = false }: Props) {
       </div>
       {!compact && (
         <span className="mt-1 text-[10px] font-bold text-slate-400 tracking-wide">
-          點曲線聽單字 · 長按慢聽整句
+          {showCompare ? '點左／右曲線對比聽 · 長按慢聽正確' : '點曲線聽單字 · 長按慢聽整句'}
         </span>
       )}
     </div>

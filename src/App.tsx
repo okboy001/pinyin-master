@@ -32,9 +32,15 @@ import { WelcomeModal } from './components/WelcomeModal';
 import {
   analyzePhoneticDiff,
   diagnoseAttempt,
+  displayTranscript,
+  isGarbageTranscript,
+  isNoSpeechResult,
   isPronunciationMatch,
+  isSameSyllableWrongTone,
+  isTonelessLatinNearMiss,
   mergeCountMaps,
   onlyHanzi,
+  pickBestTranscriptCandidate,
   splitCustomText,
   textToDictEntry,
   toPinyinArray,
@@ -241,6 +247,8 @@ export default function App() {
   const liveTranscriptRef = useRef('');
   const historyRef = useRef(history);
   const mediaStreamRef = useRef<MediaStream | null>(null);
+  const micPeakRef = useRef(0);
+  const micLevelSamplesRef = useRef(0);
   const isCustomModeRef = useRef(isCustomMode);
   const dictionaryRef = useRef(dictionary);
   const phaseRef = useRef(phase);
@@ -530,9 +538,35 @@ export default function App() {
       window.setTimeout(() => {
         setStageTipToast(null);
         showShortcutsHint();
+        if (lesson.stageId === 'tones' || lesson.kind === 'tone_drill') {
+          try {
+            if (!sessionStorage.getItem('pm_tone_single_tip_v1')) {
+              sessionStorage.setItem('pm_tone_single_tip_v1', '1');
+              window.setTimeout(() => {
+                setStageTipToast('單字提示：稍拉長、對住咪 · 辨識錯唔一定係你讀錯');
+                window.setTimeout(() => setStageTipToast(null), 3600);
+              }, 4500);
+            }
+          } catch {
+            /* ignore */
+          }
+        }
       }, 3600);
     } else {
       showShortcutsHint();
+      if (lesson.stageId === 'tones' || lesson.kind === 'tone_drill') {
+        try {
+          if (!sessionStorage.getItem('pm_tone_single_tip_v1')) {
+            sessionStorage.setItem('pm_tone_single_tip_v1', '1');
+            window.setTimeout(() => {
+              setStageTipToast('單字提示：稍拉長、對住咪 · 辨識錯唔一定係你讀錯');
+              window.setTimeout(() => setStageTipToast(null), 3600);
+            }, 4500);
+          }
+        } catch {
+          /* ignore */
+        }
+      }
     }
   }, [beginPractice]);
 
@@ -810,7 +844,9 @@ export default function App() {
 
     let isCorrect = isInstantWin;
     if (!isCorrect && cleanTranscript) {
-      isCorrect = isPronunciationMatch(cleanTranscript, wordObj.hanzi, wordObj.sim);
+      isCorrect =
+        !isGarbageTranscript(cleanTranscript) &&
+        isPronunciationMatch(cleanTranscript, wordObj.hanzi, wordObj.sim);
     }
 
     if (isCorrect) {
@@ -965,8 +1001,16 @@ export default function App() {
       return;
     }
 
-    const displayUserText = cleanTranscript || '(未偵測到發音)';
-    const pinyinOfWrongWord = cleanTranscript ? toPinyinString(cleanTranscript, 'symbol') : '---';
+    const displayUserText = displayTranscript(cleanTranscript) || '(未偵測到發音)';
+    const tonelessNear = isTonelessLatinNearMiss(cleanTranscript, wordObj.hanzi);
+    const noSpeech =
+      !tonelessNear &&
+      (isNoSpeechResult(cleanTranscript) || displayUserText === '(未偵測到發音)');
+    const pinyinOfWrongWord = onlyHanzi(cleanTranscript)
+      ? toPinyinString(onlyHanzi(cleanTranscript), 'symbol')
+      : tonelessNear
+        ? cleanTranscript.trim().toLowerCase()
+        : '---';
     const issues = diagnoseAttempt(wordObj.hanzi, cleanTranscript);
     setErrorData({
       userText: displayUserText,
@@ -978,28 +1022,43 @@ export default function App() {
 
     const newHistory = recordHistory(wordObj, false, displayUserText, pinyinOfWrongWord);
     persistProgress(globalIndexRef.current, newHistory);
-    analyzeAndRecordMistakes(wordObj.hanzi, cleanTranscript);
+    // Pure ASR miss / noise — don't pollute tone stats as if they mispronounced
+    if (!noSpeech) {
+      analyzeAndRecordMistakes(wordObj.hanzi, cleanTranscript);
+    }
     currentMistakesRef.current += 1;
     setRoundMistakes(currentMistakesRef.current);
     if (currentMistakesRef.current === 2) {
       setLastChanceToast(true);
       addEvalTimeout(() => setLastChanceToast(false), 4200);
-      setStageTipToast('最後一次機會 · 聽清楚再跟');
+      setStageTipToast(
+        noSpeech ? '最後機會 · 靠近咪再講清楚' : '最後一次機會 · 聽清楚再跟',
+      );
       window.setTimeout(() => setStageTipToast(null), 2200);
+    } else if (noSpeech) {
+      setStageTipToast('系統未聽清 · 唔算發音分析 · 再試一次');
+      window.setTimeout(() => setStageTipToast(null), 2400);
+    } else if (isSameSyllableWrongTone(cleanTranscript, wordObj.hanzi)) {
+      setStageTipToast('聲調差少少 · 睇曲線再跟一次');
+      window.setTimeout(() => setStageTipToast(null), 2600);
+    } else if (isTonelessLatinNearMiss(cleanTranscript, wordObj.hanzi)) {
+      setStageTipToast('聽到韻母 · 請加上正確聲調再講');
+      window.setTimeout(() => setStageTipToast(null), 2800);
     }
     {
       const raw = dictionaryRef.current[globalIndexRef.current];
-      if (raw) sessionMistakeWordsRef.current.push(raw);
+      // Only track as "mistake word" when we heard a real wrong pronunciation
+      if (raw && !noSpeech) sessionMistakeWordsRef.current.push(raw);
     }
     const brokenCombo = comboStreakRef.current;
     setComboStreak(0);
     comboStreakRef.current = 0;
-    if (brokenCombo >= 3) {
+    if (brokenCombo >= 3 && !noSpeech) {
       setComboBreakToast(true);
       addEvalTimeout(() => setComboBreakToast(false), 1600);
     }
     try {
-      if (navigator.vibrate) navigator.vibrate([20, 40, 20]);
+      if (navigator.vibrate) navigator.vibrate(noSpeech ? [10, 30, 10] : [20, 40, 20]);
     } catch {
       /* ignore */
     }
@@ -1032,32 +1091,55 @@ export default function App() {
     }
 
     const srsKey = dictionaryRef.current[globalIndexRef.current] || wordObj.hanzi;
-    const nextSrs = reviewCard(srsRef.current, srsKey, false);
-    setSrs(nextSrs);
-    saveSrs(nextSrs);
+    // Don't schedule SRS "again" for mic/ASR misses — that isn't a pronunciation error
+    if (!noSpeech) {
+      const nextSrs = reviewCard(srsRef.current, srsKey, false);
+      setSrs(nextSrs);
+      saveSrs(nextSrs);
+    }
 
     const practiceForCoach = activePracticeRef.current;
     const lessonForCoach = practiceForCoach?.lessonId ? getLesson(practiceForCoach.lessonId) : undefined;
+    const toneNearMiss = !noSpeech && isSameSyllableWrongTone(cleanTranscript, wordObj.hanzi);
+    const heardForContrast = onlyHanzi(cleanTranscript);
 
-    // Auto-coach: slow replay — for minimal pairs, replay A→B contrast
-    addEvalTimeout(() => {
-      if (!isPlayingRef.current) return;
-      const text = currentWordRef.current?.hanzi;
-      if (!text) return;
-      const lesson = lessonForCoach;
-      const slowRate = rateForLessonContext({
-        ttsSpeed: ttsSpeedRef.current,
-        stageId: lesson?.stageId ?? (practiceForCoach?.earFirst ? 'phrases' : undefined),
-        kind: lesson?.kind,
-        extraSlow: true,
-      });
-      const idx = globalIndexRef.current;
-      if (lesson?.kind === 'minimal_pair' && idx % 2 === 1) {
-        const prevRaw = dictionaryRef.current[idx - 1];
-        const prevHanzi = prevRaw ? parseWord(prevRaw).hanzi : '';
-        if (prevHanzi) {
-          setPairContrastHint(`${prevHanzi} → ${text}`);
-          speakHanzi(prevHanzi, {
+    // Auto-coach: skip slow TTS when ASR heard nothing; tone near-miss plays wrong→right contrast
+    if (!noSpeech) {
+      addEvalTimeout(() => {
+        if (!isPlayingRef.current) return;
+        const text = currentWordRef.current?.hanzi;
+        if (!text) return;
+        const lesson = lessonForCoach;
+        const slowRate = rateForLessonContext({
+          ttsSpeed: ttsSpeedRef.current,
+          stageId: lesson?.stageId ?? (practiceForCoach?.earFirst ? 'phrases' : undefined),
+          kind: lesson?.kind,
+          extraSlow: true,
+        });
+        const idx = globalIndexRef.current;
+        if (lesson?.kind === 'minimal_pair' && idx % 2 === 1) {
+          const prevRaw = dictionaryRef.current[idx - 1];
+          const prevHanzi = prevRaw ? parseWord(prevRaw).hanzi : '';
+          if (prevHanzi) {
+            setPairContrastHint(`${prevHanzi} → ${text}`);
+            speakHanzi(prevHanzi, {
+              voices,
+              rate: slowRate,
+              onEnd: () => {
+                speakHanzi(text, {
+                  voices,
+                  rate: slowRate,
+                  cancel: false,
+                  onEnd: () => setPairContrastHint(null),
+                });
+              },
+            });
+            return;
+          }
+        }
+        if (toneNearMiss && heardForContrast && heardForContrast !== text) {
+          setPairContrastHint(`${heardForContrast} → ${text}`);
+          speakHanzi(heardForContrast, {
             voices,
             rate: slowRate,
             onEnd: () => {
@@ -1071,15 +1153,20 @@ export default function App() {
           });
           return;
         }
-      }
-      speakHanzi(text, { voices, rate: slowRate });
-    }, 450);
+        speakHanzi(text, { voices, rate: slowRate });
+      }, 450);
+    }
 
     if (currentMistakesRef.current >= 3) {
-      addEvalTimeout(() => goToIndex(globalIndexRef.current + 1), 2800);
+      addEvalTimeout(() => goToIndex(globalIndexRef.current + 1), noSpeech ? 1800 : 2800);
     } else {
-      const retryMs =
-        lessonForCoach?.kind === 'minimal_pair' && globalIndexRef.current % 2 === 1 ? 2600 : 1900;
+      const retryMs = noSpeech
+        ? 1100
+        : toneNearMiss
+          ? 2400
+          : lessonForCoach?.kind === 'minimal_pair' && globalIndexRef.current % 2 === 1
+            ? 2600
+            : 1900;
       addEvalTimeout(() => {
         if (isPlayingRef.current) setPhase('system_speaking');
       }, retryMs);
@@ -1342,6 +1429,14 @@ export default function App() {
 
     liveTranscriptRef.current = '';
     setLiveTranscript('');
+    micPeakRef.current = 0;
+    micLevelSamplesRef.current = 0;
+    // Ensure demo TTS isn't still feeding the mic when listening starts
+    try {
+      window.speechSynthesis.cancel();
+    } catch {
+      /* ignore */
+    }
     const practice = activePracticeRef.current;
     const lesson = practice?.lessonId ? getLesson(practice.lessonId) : undefined;
     const hanziLen = currentWordRef.current?.hanzi.length ?? 2;
@@ -1355,18 +1450,72 @@ export default function App() {
     const recognition = new SpeechRecognition();
     recognitionRef.current = recognition;
     recognition.lang = 'zh-CN';
+    // Short utterances: non-continuous gives cleaner finals; long lines need continuous
+    recognition.continuous = hanziLen > 2;
     recognition.interimResults = true;
-    recognition.continuous = true;
-    recognition.maxAlternatives = 1;
+    // More alternatives help monosyllables — Web Speech often picks wrong 椅/以/已 or digits
+    recognition.maxAlternatives = hanziLen <= 2 ? 5 : 3;
 
     let graceUsed = false;
+    let garbageRetryUsed = false;
     let manualExtendCount = 0;
     let remaining = seconds;
+    // Short items: don't early-fail on first interim wrong guess (ASR is noisy)
+    const allowEarlyFail = hanziLen >= 2 && hanziLen <= 4;
+    // Keep every alternative seen this turn — later interim "222" must not erase earlier 以/椅
+    const heardCandidates = new Set<string>();
+    // Ignore instant "matches" right after demo — speaker echo often triggers false passes
+    const listenArmedAt = performance.now() + (hanziLen <= 2 ? 480 : 0);
+    const isListenArmed = () => performance.now() >= listenArmedAt;
+    let stableMatchHits = 0;
+    let lastStableMatch = '';
+
+    const restartRecognition = () => {
+      try { recognition.abort(); } catch { /* ignore */ }
+      window.setTimeout(() => {
+        if (isCancelled) return;
+        try { recognition.start(); } catch { /* ignore */ }
+      }, 120);
+    };
 
     const finishListen = () => {
       if (isCancelled) return;
-      const partial = onlyHanzi(liveTranscriptRef.current);
-      const targetLen = currentWordRef.current?.hanzi.length ?? 0;
+      const raw = liveTranscriptRef.current;
+      const partial = onlyHanzi(raw);
+      const target = currentWordRef.current;
+      const targetLen = target?.hanzi.length ?? 0;
+      const micWasQuiet = micPeakRef.current < 0.045;
+      const micMeterReady = micLevelSamplesRef.current >= 12;
+
+      // Silent room: ignore ASR hallucinations — only when meter actually sampled levels
+      if (micMeterReady && micWasQuiet && targetLen <= 2) {
+        isCancelled = true;
+        if (timerId) clearTimeout(timerId);
+        if (countdownInterval) clearInterval(countdownInterval);
+        try { recognition.abort(); } catch { /* ignore */ }
+        setStageTipToast('咪太靜 · 靠近啲再講（未計發音分析）');
+        window.setTimeout(() => setStageTipToast(null), 2400);
+        evaluateResult(false, '');
+        return;
+      }
+
+      // Final pick against ALL candidates heard this turn (not just last interim)
+      if (target && heardCandidates.size > 0) {
+        const picked = pickBestTranscriptCandidate([...heardCandidates], target.hanzi, target.sim);
+        if (picked.matched) {
+          isCancelled = true;
+          if (timerId) clearTimeout(timerId);
+          if (countdownInterval) clearInterval(countdownInterval);
+          try { recognition.abort(); } catch { /* ignore */ }
+          evaluateResult(true, picked.transcript);
+          return;
+        }
+        if (picked.transcript) {
+          liveTranscriptRef.current = picked.transcript;
+          setLiveTranscript(picked.transcript);
+        }
+      }
+
       // If learner already started speaking a long line, give one short extension
       if (!graceUsed && partial.length > 0 && partial.length < targetLen && targetLen > 4) {
         graceUsed = true;
@@ -1376,13 +1525,69 @@ export default function App() {
           if (isCancelled) return;
           isCancelled = true;
           try { recognition.abort(); } catch { /* ignore */ }
-          evaluateResult(false, liveTranscriptRef.current);
+          const t = currentWordRef.current;
+          if (t && heardCandidates.size > 0) {
+            const picked = pickBestTranscriptCandidate([...heardCandidates], t.hanzi, t.sim);
+            if (picked.matched) {
+              evaluateResult(true, picked.transcript);
+              return;
+            }
+            evaluateResult(false, picked.transcript || displayTranscript(liveTranscriptRef.current));
+            return;
+          }
+          evaluateResult(false, displayTranscript(liveTranscriptRef.current));
         }, 4000);
+        return;
+      }
+      // Monosyllables: ASR often returns only digits on first pass — one soft retry + mic restart
+      const latest = liveTranscriptRef.current;
+      if (
+        !garbageRetryUsed &&
+        targetLen <= 2 &&
+        (!onlyHanzi(latest) || isGarbageTranscript(latest))
+      ) {
+        // Pool may still have a real Hanzi from earlier interim — don't treat as silence
+        if (target && heardCandidates.size > 0) {
+          const poolPick = pickBestTranscriptCandidate([...heardCandidates], target.hanzi, target.sim);
+          if (poolPick.matched) {
+            isCancelled = true;
+            if (timerId) clearTimeout(timerId);
+            if (countdownInterval) clearInterval(countdownInterval);
+            try { recognition.abort(); } catch { /* ignore */ }
+            evaluateResult(true, poolPick.transcript);
+            return;
+          }
+          if (poolPick.transcript && !isNoSpeechResult(poolPick.transcript)) {
+            isCancelled = true;
+            if (timerId) clearTimeout(timerId);
+            if (countdownInterval) clearInterval(countdownInterval);
+            try { recognition.abort(); } catch { /* ignore */ }
+            evaluateResult(false, poolPick.transcript);
+            return;
+          }
+        }
+        garbageRetryUsed = true;
+        remaining = 4;
+        setTimeLeft(4);
+        setStageTipToast('未聽清 · 對住咪再講清楚啲');
+        window.setTimeout(() => setStageTipToast(null), 2000);
+        try {
+          if (navigator.vibrate) navigator.vibrate([8, 40, 8]);
+        } catch {
+          /* ignore */
+        }
+        restartRecognition();
+        scheduleFinish(4000);
         return;
       }
       isCancelled = true;
       try { recognition.abort(); } catch { /* ignore */ }
-      evaluateResult(false, liveTranscriptRef.current);
+      if (target && heardCandidates.size > 0) {
+        const picked = pickBestTranscriptCandidate([...heardCandidates], target.hanzi, target.sim);
+        evaluateResult(picked.matched, picked.transcript || displayTranscript(liveTranscriptRef.current));
+        return;
+      }
+      evaluateResult(false, displayTranscript(liveTranscriptRef.current));
     };
 
     const scheduleFinish = (ms: number) => {
@@ -1425,40 +1630,170 @@ export default function App() {
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
       if (isCancelled || !isPlayingRef.current) return;
-      const fullTranscript = Array.from(event.results)
-        .map((r) => r[0].transcript)
+
+      const candidates: string[] = [];
+      let latestFinal = false;
+      for (let ri = 0; ri < event.results.length; ri++) {
+        const result = event.results[ri];
+        if (result.isFinal) latestFinal = true;
+        for (let ai = 0; ai < result.length; ai++) {
+          const alt = result[ai]?.transcript;
+          if (alt) {
+            candidates.push(alt);
+            heardCandidates.add(alt.trim());
+          }
+        }
+      }
+      const joined = Array.from(event.results)
+        .map((r) => r[0]?.transcript ?? '')
         .join('');
-      liveTranscriptRef.current = fullTranscript;
-      setLiveTranscript(fullTranscript);
+      if (joined) {
+        candidates.unshift(joined);
+        heardCandidates.add(joined.trim());
+      }
 
       const target = currentWordRef.current;
       if (!target) return;
-      const cleanTranscript = onlyHanzi(fullTranscript);
 
-      if (isPronunciationMatch(cleanTranscript, target.hanzi, target.sim)) {
+      const picked = pickBestTranscriptCandidate(
+        [...heardCandidates, ...candidates],
+        target.hanzi,
+        target.sim,
+      );
+      const display = displayTranscript(picked.transcript || joined);
+      // Don't overwrite a good Hanzi live view with empty garbage interim
+      if (display || !onlyHanzi(liveTranscriptRef.current)) {
+        liveTranscriptRef.current = display;
+        setLiveTranscript(display);
+      }
+
+      if (picked.matched) {
+        // No real mic energy yet — likely speaker bleed / hallucination; wait
+        if (
+          hanziLen <= 2 &&
+          micLevelSamplesRef.current >= 12 &&
+          micPeakRef.current < 0.045
+        ) {
+          if (display || !onlyHanzi(liveTranscriptRef.current)) {
+            liveTranscriptRef.current = display;
+            setLiveTranscript(display);
+          }
+          return;
+        }
+        // Wait out speaker-echo window for short items; still keep candidate for later
+        if (!isListenArmed()) {
+          if (display || !onlyHanzi(liveTranscriptRef.current)) {
+            liveTranscriptRef.current = display;
+            setLiveTranscript(display);
+          }
+          return;
+        }
+        // Monosyllables: need a final result OR two consistent interim matches (anti-flicker)
+        if (hanziLen <= 2) {
+          const key = onlyHanzi(picked.transcript) || picked.transcript;
+          if (key === lastStableMatch) stableMatchHits += 1;
+          else {
+            lastStableMatch = key;
+            stableMatchHits = 1;
+          }
+          const confidentAlt = (() => {
+            for (let ri = 0; ri < event.results.length; ri++) {
+              const result = event.results[ri];
+              for (let ai = 0; ai < result.length; ai++) {
+                const alt = result[ai];
+                if (!alt) continue;
+                if (
+                  alt.confidence > 0 &&
+                  alt.confidence < 0.35 &&
+                  isPronunciationMatch(alt.transcript, target.hanzi, target.sim)
+                ) {
+                  return false;
+                }
+                if (
+                  alt.confidence >= 0.35 &&
+                  isPronunciationMatch(alt.transcript, target.hanzi, target.sim)
+                ) {
+                  return true;
+                }
+              }
+            }
+            return null;
+          })();
+          const stableEnough =
+            latestFinal ||
+            stableMatchHits >= 2 ||
+            confidentAlt === true ||
+            performance.now() >= listenArmedAt + 1600;
+          if (!stableEnough) {
+            if (display || !onlyHanzi(liveTranscriptRef.current)) {
+              liveTranscriptRef.current = display;
+              setLiveTranscript(display);
+            }
+            return;
+          }
+        }
         isCancelled = true;
         if (timerId) clearTimeout(timerId);
         if (countdownInterval) clearInterval(countdownInterval);
         try { recognition.abort(); } catch { /* ignore */ }
         setStageTipToast('提前聽對 · 好');
         window.setTimeout(() => setStageTipToast(null), 1200);
-        evaluateResult(true, cleanTranscript);
+        evaluateResult(true, picked.transcript);
         return;
       }
+      stableMatchHits = 0;
+      lastStableMatch = '';
 
-      // Early fail only for short items — long phrases need the full listen window
-      if (cleanTranscript.length === target.hanzi.length && target.hanzi.length <= 4) {
+      // Early fail only on final results for short multi-char items — never for single chars
+      const clean = onlyHanzi(display);
+      if (
+        allowEarlyFail &&
+        latestFinal &&
+        clean.length === target.hanzi.length &&
+        !isGarbageTranscript(display)
+      ) {
+        const poolPick = pickBestTranscriptCandidate([...heardCandidates], target.hanzi, target.sim);
+        if (poolPick.matched) {
+          isCancelled = true;
+          if (timerId) clearTimeout(timerId);
+          if (countdownInterval) clearInterval(countdownInterval);
+          try { recognition.abort(); } catch { /* ignore */ }
+          evaluateResult(true, poolPick.transcript);
+          return;
+        }
+        // Tone near-miss: keep listening — a better alternative may still arrive
+        if (
+          isSameSyllableWrongTone(poolPick.transcript || clean, target.hanzi) ||
+          isSameSyllableWrongTone(clean, target.hanzi)
+        ) {
+          if (poolPick.transcript) {
+            liveTranscriptRef.current = poolPick.transcript;
+            setLiveTranscript(poolPick.transcript);
+          }
+          return;
+        }
         isCancelled = true;
         if (timerId) clearTimeout(timerId);
         if (countdownInterval) clearInterval(countdownInterval);
         try { recognition.abort(); } catch { /* ignore */ }
-        evaluateResult(false, cleanTranscript);
+        evaluateResult(false, poolPick.transcript || clean);
       }
     };
 
     recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
       if (isCancelled || !isPlayingRef.current) return;
-      if (event.error === 'aborted' || event.error === 'no-speech') return;
+      if (event.error === 'aborted') return;
+      // Short items + non-continuous: silence ends the session — restart until our timer finishes
+      if (event.error === 'no-speech') {
+        if (hanziLen <= 2) {
+          try {
+            recognition.start();
+          } catch {
+            /* ignore */
+          }
+        }
+        return;
+      }
       if (event.error === 'network') {
         setStageTipToast(
           typeof navigator !== 'undefined' && !navigator.onLine
@@ -1527,7 +1862,13 @@ export default function App() {
 
     try {
       if (!mediaStreamRef.current) {
-        mediaStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaStreamRef.current = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+        });
       }
       setMicStream(mediaStreamRef.current);
       setMicDenied(false);
@@ -4617,6 +4958,18 @@ export default function App() {
                   </div>
                   <div className={`text-base md:text-2xl font-bold tracking-widest text-center min-h-[2.5rem] md:min-h-[3rem] flex flex-col items-center justify-center max-w-[90%] overflow-hidden gap-1 ${onTrack ? 'text-emerald-700' : 'text-slate-600'}`}>
                     <span className="truncate">{liveTranscript ? `「${heard || liveTranscript}」` : '請朗讀...'}</span>
+                    {!heard && targetLen <= 2 && (
+                      <span className="text-[10px] font-black text-slate-400 px-2">
+                        單字請稍拉長、對住咪 · 辨識較易飄
+                      </span>
+                    )}
+                    {heard &&
+                      targetLen <= 2 &&
+                      isSameSyllableWrongTone(heard, currentWord.hanzi) && (
+                      <span className="text-[10px] font-black text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full">
+                        近咗 · 聲調再調（繼續講或等判定）
+                      </span>
+                    )}
                     {heard && (
                       <span className={`text-xs md:text-sm font-mono font-bold tracking-wide truncate max-w-full ${onTrack ? 'text-emerald-500' : 'text-slate-400'}`}>
                         {toPinyinString(heard, 'symbol')}
@@ -4686,6 +5039,10 @@ export default function App() {
                   <MicLevelMeter
                     stream={micStream}
                     active={isPlaying && phase === 'user_speaking'}
+                    onLevel={(lvl) => {
+                      micLevelSamplesRef.current += 1;
+                      if (lvl > micPeakRef.current) micPeakRef.current = lvl;
+                    }}
                     onQuietTap={() => {
                       setMicDenied(true);
                       setStageTipToast('太靜 · 檢查麥克風同距離');
@@ -5092,14 +5449,36 @@ export default function App() {
                         window.setTimeout(() => setStageTipToast(null), 1600);
                       }
                     }}
-                    className="flex-1 w-full bg-red-50 border border-red-100 rounded-xl p-2.5 md:p-4 flex flex-row items-center justify-between shadow-sm min-h-0 gap-2 active:scale-[0.99] text-left"
-                    title="撳一下複製您讀成嘅內容"
+                    className={`flex-1 w-full border rounded-xl p-2.5 md:p-4 flex flex-row items-center justify-between shadow-sm min-h-0 gap-2 active:scale-[0.99] text-left ${
+                      errorData.userText === '(未偵測到發音)'
+                        ? 'bg-amber-50 border-amber-200'
+                        : 'bg-red-50 border-red-100'
+                    }`}
+                    title="撳一下複製"
                   >
                     <div className="flex flex-col text-left min-w-0">
-                      <span className="text-[10px] md:text-xs font-bold text-red-400 mb-0.5">您讀成 · 可複製</span>
-                      <span className="text-base md:text-xl font-black text-red-600 line-clamp-2 md:line-clamp-1">{errorData.userText}</span>
+                      <span
+                        className={`text-[10px] md:text-xs font-bold mb-0.5 ${
+                          errorData.userText === '(未偵測到發音)' ? 'text-amber-600' : 'text-red-400'
+                        }`}
+                      >
+                        {errorData.userText === '(未偵測到發音)' ? '系統未聽清 · 可複製' : '您讀成 · 可複製'}
+                      </span>
+                      <span
+                        className={`text-base md:text-xl font-black line-clamp-2 md:line-clamp-1 ${
+                          errorData.userText === '(未偵測到發音)' ? 'text-amber-800' : 'text-red-600'
+                        }`}
+                      >
+                        {errorData.userText}
+                      </span>
                     </div>
-                    <span className="font-mono text-[10px] md:text-sm text-red-500 bg-white px-1.5 py-1 md:px-3 md:py-1.5 rounded-md md:rounded-lg shadow-sm border border-red-100 max-w-[48%] truncate shrink-0">
+                    <span
+                      className={`font-mono text-[10px] md:text-sm bg-white px-1.5 py-1 md:px-3 md:py-1.5 rounded-md md:rounded-lg shadow-sm border max-w-[48%] truncate shrink-0 ${
+                        errorData.userText === '(未偵測到發音)'
+                          ? 'text-amber-700 border-amber-100'
+                          : 'text-red-500 border-red-100'
+                      }`}
+                    >
                       {errorData.userPinyin}
                     </span>
                   </button>
@@ -5168,7 +5547,7 @@ export default function App() {
                 {errorData.userText === '(未偵測到發音)' && (
                   <div className="w-full flex flex-col items-center gap-2 max-w-md">
                     <p className="text-[11px] md:text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 leading-relaxed">
-                      未聽到聲音 · 睇下麥克風條有冇跳動，靠近咪、大聲啲再跟；必要時檢查瀏覽器麥克風權限。
+                      未聽清有效發音（單字有時會認成雜訊，或者咪太遠）· 睇麥克風條有冇跳動，靠近咪、稍拉長再跟。呢次唔計入發音錯分析。
                     </p>
                     <button
                       type="button"
@@ -5230,9 +5609,18 @@ export default function App() {
                         <ToneContour
                           hanzi={errorData.correctText}
                           compact={errorData.correctText.length > 4}
+                          compareHanzi={
+                            onlyHanzi(errorData.userText) &&
+                            isSameSyllableWrongTone(errorData.userText, errorData.correctText)
+                              ? onlyHanzi(errorData.userText)
+                              : undefined
+                          }
                         />
                         <span className="text-[10px] font-black text-rose-600 tracking-wide">
-                          聲調唔啱 · 撳曲線聽單字再跟
+                          {onlyHanzi(errorData.userText) &&
+                          isSameSyllableWrongTone(errorData.userText, errorData.correctText)
+                            ? `對比 ${onlyHanzi(errorData.userText)} → ${errorData.correctText} · 撳曲線慢聽`
+                            : '聲調唔啱 · 撳曲線聽單字再跟'}
                         </span>
                       </div>
                     )}

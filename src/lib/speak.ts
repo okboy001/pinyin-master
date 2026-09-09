@@ -65,5 +65,10 @@ export function thinkMsAfterDemo(hanziLen: number, stageId?: string): number {
     stageId === 'phrases' ? 800 :
     stageId === 'tones' || stageId === 'sounds' ? 700 :
     550;
-  return Math.min(2200, base + Math.max(0, hanziLen - 2) * 90);
+  let ms = Math.min(2200, base + Math.max(0, hanziLen - 2) * 90);
+  // Extra gap after monosyllable demos — reduces speaker-echo into ASR
+  if (hanziLen <= 1) {
+    ms = Math.max(ms, stageId === 'tones' || stageId === 'sounds' ? 1200 : 950);
+  }
+  return ms;
 }

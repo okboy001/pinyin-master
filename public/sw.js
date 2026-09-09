@@ -1,5 +1,5 @@
 /* Offline shell cache for daily practice after first visit */
-const CACHE = 'pinyin-master-v180';
+const CACHE = 'pinyin-master-v193';
 const PRECACHE = ['./', './index.html', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', (event) => {

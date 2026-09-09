@@ -4,6 +4,216 @@ export function onlyHanzi(text: string): string {
   return text.replace(/[^\u4e00-\u9fa5]/g, '');
 }
 
+/** ASR often returns digits / Latin noise for short monosyllables — treat as silence. */
+export function isGarbageTranscript(text: string): boolean {
+  const t = text.trim();
+  if (!t) return true;
+  const hanzi = onlyHanzi(t);
+  // Pure filler particles with no content syllable
+  if (hanzi && /^[啊哦嗯呃咦欸唔呀吧呢吗嗎了的]+$/u.test(hanzi)) return true;
+  if (hanzi) return false;
+  // Pure digits / punctuation / latin filler (e.g. "222", "ok", "um", fullwidth ２２２)
+  const asciiish = t.replace(/[０-９]/g, (d) => String.fromCharCode(d.charCodeAt(0) - 0xfee0));
+  if (/^[\d\s.,!?…·\-_'"`~]+$/.test(asciiish)) return true;
+  if (/^[a-zA-Z\s.,!?]+$/.test(t) && t.length <= 6) return true;
+  if (/^(um+|uh+|ah+|oh+|hmm+|mm+)$/i.test(t)) return true;
+  return false;
+}
+
+/** True when we have no usable speech hypothesis (not a real pronunciation attempt). */
+export function isNoSpeechResult(text: string): boolean {
+  return !text.trim() || isGarbageTranscript(text) || !onlyHanzi(text);
+}
+
+/** Prefer Hanzi for UI; hide numeric/latin garbage as empty. */
+export function displayTranscript(text: string): string {
+  if (!text) return '';
+  const hanzi = onlyHanzi(text);
+  if (hanzi) return hanzi;
+  const t = text.trim().toLowerCase().replace(/ü/g, 'v');
+  // Keep bare pinyin syllables for coaching; drop filler latin
+  if (/^(ok|um+|uh+|ah+|oh+|hmm+|mm+|yes|no)$/i.test(t)) return '';
+  if (/^[a-zv]+$/i.test(t) && t.length >= 1 && t.length <= 6) return t;
+  if (isGarbageTranscript(text)) return '';
+  return text.trim();
+}
+
+/**
+ * Toneless romanization near the target (e.g. "yi" for 椅) — not a pass, but coachable.
+ */
+export function isTonelessLatinNearMiss(transcript: string, targetHanzi: string): boolean {
+  if (!transcript || !targetHanzi || onlyHanzi(transcript)) return false;
+  const t = transcript.trim().toLowerCase().replace(/\s+/g, '');
+  if (!/^[a-züv]+$/i.test(t.replace(/ü/g, 'v'))) return false;
+  if (/[1-5āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜ]/.test(transcript)) return false;
+  const bases = pinyinBases(targetHanzi);
+  if (bases.length !== 1) return false;
+  const norm = t.replace(/ü/g, 'v');
+  return norm === bases[0];
+}
+
+/**
+ * Same syllable, different tone — useful for coaching (椅 vs 意).
+ */
+export function isSameSyllableWrongTone(
+  transcript: string,
+  targetHanzi: string,
+): boolean {
+  const clean = onlyHanzi(transcript);
+  if (!clean || !targetHanzi || targetHanzi.length > 2) return false;
+  const cTone = pinyinNums(targetHanzi);
+  const wTone = pinyinNums(clean.length === targetHanzi.length ? clean : clean.slice(-targetHanzi.length));
+  if (cTone.length === 0 || cTone.length !== wTone.length) return false;
+  const sameBase = cTone.every((s, i) => s.replace(/\d/g, '') === wTone[i]!.replace(/\d/g, ''));
+  const sameTone = cTone.every((s, i) => s === wTone[i]);
+  return sameBase && !sameTone;
+}
+
+function pinyinNums(text: string): string[] {
+  if (!text) return [];
+  return (pinyinProFn(text, { type: 'array', toneType: 'num' }) as string[]).map((s) =>
+    s.toLowerCase().replace(/ü/g, 'v'),
+  );
+}
+
+function pinyinBases(text: string): string[] {
+  return pinyinNums(text).map((s) => s.replace(/\d/g, ''));
+}
+
+/** Map common tone marks → numbered pinyin syllable (yi3). */
+function latinSyllableToNum(raw: string): string | null {
+  let s = raw.trim().toLowerCase().replace(/ü/g, 'v').replace(/[^a-z0-9vāáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜ]/g, '');
+  if (!s) return null;
+  if (/^[a-zv]+[1-5]$/.test(s)) return s.replace(/5$/, '0');
+  const toneMarks: [RegExp, string, string][] = [
+    [/[āēīōūǖ]/, '1', 'aeiouv'],
+    [/[áéíóúǘ]/, '2', 'aeiouv'],
+    [/[ǎěǐǒǔǚ]/, '3', 'aeiouv'],
+    [/[àèìòùǜ]/, '4', 'aeiouv'],
+  ];
+  for (const [re, tone] of toneMarks) {
+    if (re.test(s)) {
+      const base = s
+        .replace(/[āáǎà]/g, 'a')
+        .replace(/[ēéěè]/g, 'e')
+        .replace(/[īíǐì]/g, 'i')
+        .replace(/[ōóǒò]/g, 'o')
+        .replace(/[ūúǔù]/g, 'u')
+        .replace(/[ǖǘǚǜ]/g, 'v');
+      return `${base}${tone}`;
+    }
+  }
+  // Toneless latin — not enough for a pass by itself
+  return null;
+}
+
+/**
+ * Some engines return romanization (yǐ / yi3) instead of Hanzi for short words.
+ */
+export function latinPinyinMatchesTarget(transcript: string, targetHanzi: string): boolean {
+  if (!transcript || !targetHanzi || onlyHanzi(transcript)) return false;
+  if (isGarbageTranscript(transcript) && /^[\d\s.,!?]+$/.test(transcript.trim())) return false;
+  const target = pinyinNums(targetHanzi);
+  if (target.length === 0 || target.length > 4) return false;
+
+  const parts = transcript
+    .trim()
+    .toLowerCase()
+    .split(/[\s\-_/]+/)
+    .map((p) => latinSyllableToNum(p))
+    .filter((p): p is string => Boolean(p));
+
+  if (parts.length === target.length && parts.every((p, i) => p === target[i])) return true;
+
+  // Single blob "yi3hao3" rare; also try whole string as one syllable for 1-char targets
+  if (target.length === 1) {
+    const one = latinSyllableToNum(transcript.replace(/\s+/g, ''));
+    if (one && one === target[0]) return true;
+  }
+  return false;
+}
+
+/**
+ * Pick the best ASR candidate for the target: exact / homophone / pinyin match.
+ * Web Speech is a character decoder — for pronunciation practice we score by sound.
+ */
+export function pickBestTranscriptCandidate(
+  candidates: string[],
+  targetHanzi: string,
+  targetSim: string,
+): { transcript: string; matched: boolean } {
+  const scrub = (c: string) =>
+    c
+      .replace(/["""''「」『』【】[\]()（）·•…~～]/g, '')
+      .replace(/\s+/g, '')
+      .trim();
+
+  const expanded: string[] = [];
+  for (const raw of candidates) {
+    const c = scrub(raw);
+    if (!c) continue;
+    expanded.push(c);
+    // Single-char targets: also score each character in compounds separately
+    if (targetHanzi.length === 1) {
+      for (const ch of onlyHanzi(c)) expanded.push(ch);
+    }
+  }
+  const unique = [...new Set(expanded.filter(Boolean))];
+  if (unique.length === 0) return { transcript: '', matched: false };
+
+  for (const c of unique) {
+    if (isGarbageTranscript(c) && !latinPinyinMatchesTarget(c, targetHanzi) && !isTonelessLatinNearMiss(c, targetHanzi)) {
+      continue;
+    }
+    if (isPronunciationMatch(c, targetHanzi, targetSim) || latinPinyinMatchesTarget(c, targetHanzi)) {
+      return { transcript: onlyHanzi(c) || c, matched: true };
+    }
+  }
+
+  // Toneless pinyin near-miss (yi for 椅) — keep for coaching, not a pass
+  for (const c of unique) {
+    if (isTonelessLatinNearMiss(c, targetHanzi)) {
+      return { transcript: c.trim().toLowerCase(), matched: false };
+    }
+  }
+
+  // Prefer wrong Hanzi whose toned pinyin is closest (better coaching than random ASR pick)
+  const targetTone = pinyinNums(targetHanzi);
+  let bestWrong = '';
+  let bestDist = Infinity;
+  const syllableDistance = (user: string[], target: string[]) => {
+    if (user.length !== target.length) return editDistance(user, target) + 10;
+    let d = 0;
+    for (let i = 0; i < user.length; i++) {
+      const ub = user[i]!.replace(/\d/g, '');
+      const tb = target[i]!.replace(/\d/g, '');
+      const ut = user[i]!.replace(/\D/g, '');
+      const tt = target[i]!.replace(/\D/g, '');
+      if (ub === tb && ut === tt) continue;
+      if (ub === tb) d += 1; // same syllable, wrong tone — closest wrong
+      else d += 3;
+    }
+    return d;
+  };
+  for (const c of unique) {
+    if (isGarbageTranscript(c)) continue;
+    const hanzi = onlyHanzi(c);
+    if (!hanzi) continue;
+    const slice = hanzi.length === targetHanzi.length ? hanzi : hanzi.slice(-targetHanzi.length);
+    const userTone = pinyinNums(slice);
+    if (userTone.length === 0) continue;
+    const dist = syllableDistance(userTone, targetTone);
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestWrong = hanzi.length === targetHanzi.length ? hanzi : slice;
+    }
+  }
+  if (bestWrong) return { transcript: bestWrong, matched: false };
+
+  const nonGarbage = unique.find((c) => !isGarbageTranscript(c) && onlyHanzi(c));
+  return { transcript: nonGarbage ? onlyHanzi(nonGarbage) : '', matched: false };
+}
+
 export function toPinyinString(text: string, toneType: 'none' | 'symbol' | 'num' = 'symbol'): string {
   if (!text) return '';
   return pinyinProFn(text, { type: 'string', toneType }) as string;
@@ -43,8 +253,15 @@ export function isPronunciationMatch(
   targetHanzi: string,
   targetSim: string,
 ): boolean {
+  if (!targetHanzi) return false;
+  if (
+    latinPinyinMatchesTarget(transcript, targetHanzi) ||
+    (targetSim && latinPinyinMatchesTarget(transcript, targetSim))
+  ) {
+    return true;
+  }
   const clean = onlyHanzi(transcript);
-  if (!clean || !targetHanzi) return false;
+  if (!clean) return false;
 
   const expandErhua = (s: string): string[] => {
     const variants = [s];
@@ -70,6 +287,14 @@ export function isPronunciationMatch(
     if (clean === t || cleanSoft === t || softStrip(clean) === t) return true;
   }
 
+  // Single-char targets: ASR often returns a compound (椅子、第一) — accept if target char appears
+  for (const t of allTargets) {
+    if (t.length !== 1) continue;
+    for (const source of [clean, cleanSoft]) {
+      if (source.includes(t)) return true;
+    }
+  }
+
   // Trailing window — common when ASR adds a particle
   for (const t of allTargets) {
     const len = t.length;
@@ -77,10 +302,23 @@ export function isPronunciationMatch(
       if (source.length >= len && source.length <= len + 2) {
         const window = source.slice(-len);
         if (window === t) return true;
-        const userPy = normalizePinyinSyllables(window);
-        const targetPy = normalizePinyinSyllables(t);
-        if (userPy.length === targetPy.length && userPy.length > 0 && userPy.join('') === targetPy.join('')) {
-          return true;
+        // Short targets: tone-aware only (意≠椅). Longer: toneless syllable match OK.
+        if (len <= 2) {
+          const userTone = pinyinNums(window);
+          const targetTone = pinyinNums(t);
+          if (
+            userTone.length === targetTone.length &&
+            userTone.length > 0 &&
+            userTone.every((s, i) => s === targetTone[i])
+          ) {
+            return true;
+          }
+        } else {
+          const userPy = normalizePinyinSyllables(window);
+          const targetPy = normalizePinyinSyllables(t);
+          if (userPy.length === targetPy.length && userPy.length > 0 && userPy.join('') === targetPy.join('')) {
+            return true;
+          }
         }
       }
     }
@@ -94,16 +332,44 @@ export function isPronunciationMatch(
     return editDistance(userPy, targetPy) <= allowed;
   };
 
-  // Same / near character count — longer phrases tolerate 1–2 ASR syllable slips
+  // Same / near character count — longer phrases tolerate 1–2 ASR syllable slips.
+  // Short (≤2) must NOT use toneless pinyin (意/椅 both "yi") — homophone block below is tone-aware.
   for (const t of allTargets) {
-    const allowed =
-      t.length <= 2 ? 0 : t.length <= 4 ? 1 : t.length <= 8 ? 1 : 2;
+    if (t.length <= 2) continue;
+    const allowed = t.length <= 4 ? 1 : t.length <= 8 ? 1 : 2;
     for (const source of [clean, cleanSoft]) {
       if (source.length === t.length && pinyinCloseEnough(source, t, allowed)) return true;
       // ASR sometimes drops/adds one character on long survival lines
       if (t.length >= 5 && Math.abs(source.length - t.length) === 1 && pinyinCloseEnough(source, t, Math.max(1, allowed))) {
         return true;
       }
+    }
+  }
+
+  // Short items: accept same-sound Hanzi (homophones). ASR picks wrong character
+  // constantly for monosyllables (椅→以/已, or even digits); pronunciation cares about sound.
+  for (const t of allTargets) {
+    if (t.length > 3) continue;
+    const targetTone = pinyinNums(t);
+    const targetBase = pinyinBases(t);
+    if (targetTone.length === 0) continue;
+    for (const source of [clean, cleanSoft]) {
+      if (!source) continue;
+      // Same length preferred; also allow +1 particle already soft-stripped
+      if (Math.abs(source.length - t.length) > 1) continue;
+      const userTone = pinyinNums(source.length === t.length ? source : source.slice(-t.length));
+      if (userTone.length === targetTone.length && userTone.every((s, i) => s === targetTone[i])) {
+        return true;
+      }
+      // Single syllable: match by base+tone from any char in a short utterance / compound
+      if (t.length === 1 && source.length >= 1 && source.length <= 5) {
+        for (const ch of source) {
+          const one = pinyinNums(ch);
+          if (one.length === 1 && one[0] === targetTone[0]) return true;
+        }
+      }
+      // Ultra-short: if tone matches on bases already handled; base-only is NOT a pass
+      void targetBase;
     }
   }
 
@@ -165,9 +431,33 @@ export function diagnoseAttempt(correctHanzi: string, wrongText: string): {
   const final = Object.keys(finalHits).length > 0;
   const tips: string[] = [];
 
-  if (!onlyHanzi(wrongText)) {
+  if (!onlyHanzi(wrongText) || isGarbageTranscript(wrongText)) {
+    if (isTonelessLatinNearMiss(wrongText, correctHanzi)) {
+      tips.push('聽到拼音韻母，但未帶聲調——睇曲線，用聲調再講一次');
+      return { tone: true, initial: false, final: false, tips };
+    }
     tips.push('未聽到清晰發音，對住聲調曲線再試一次');
+    if (correctHanzi.length <= 2) {
+      tips.push('單字請稍為拉長、對住咪講；嘈雜環境辨識會唔穩');
+    }
     return { tone: false, initial: false, final: false, tips };
+  }
+
+  // Same syllable, wrong tone — most common single-char false feel
+  {
+    const cTone = pinyinNums(correctHanzi);
+    const wTone = pinyinNums(onlyHanzi(wrongText));
+    if (
+      correctHanzi.length <= 2 &&
+      cTone.length === wTone.length &&
+      cTone.length > 0 &&
+      cTone.every((s, i) => s.replace(/\d/g, '') === wTone[i]!.replace(/\d/g, '')) &&
+      cTone.some((s, i) => s !== wTone[i])
+    ) {
+      const got = wTone.map((s) => s.replace(/\D/g, '') || '輕').join('、');
+      const need = cTone.map((s) => s.replace(/\D/g, '') || '輕').join('、');
+      tips.push(`聲調唔啱：聽成第 ${got} 聲，目標係第 ${need} 聲`);
+    }
   }
 
   if (tone) {
